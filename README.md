@@ -12,6 +12,7 @@ ros2bag_tools adds verb extensions to the ros2bag cli.
 | Verb    | Usage |
 | ------- |:------------------|
 | **add** | add new topic, with messages aligned to existing topic |
+| compress | compress a bag file |
 | **cut** | cut time slice by wall time or duration offset |
 | **drop** | drop X out of every Y messages of a topic |
 | export  | export data to other formats, see [export](#export) |

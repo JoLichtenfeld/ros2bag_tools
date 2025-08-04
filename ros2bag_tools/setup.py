@@ -12,7 +12,7 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
     ],
-    install_requires=['ros2cli'],
+    install_requires=['ros2cli', 'PyYAML'],
     zip_safe=True,
     author='Marcel Zeilinger',
     author_email='marcel.zeilinger@ait.ac.at',
@@ -33,6 +33,7 @@ The package provides the additional commands for the ROS 2 bag command line tool
     entry_points={
         'ros2bag.verb': [
             'add = ros2bag_tools.verb.add:AddVerb',
+            'compress = ros2bag_tools.verb.compress:CompressVerb',
             'cut = ros2bag_tools.verb.cut:CutVerb',
             'drop = ros2bag_tools.verb.drop:DropVerb',
             'echo = ros2bag_tools.verb.echo:EchoVerb',
