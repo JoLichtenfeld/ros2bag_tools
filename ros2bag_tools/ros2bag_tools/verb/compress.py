@@ -16,6 +16,7 @@ import os
 import subprocess
 import tempfile
 import yaml
+import glob
 from pathlib import Path
 
 from ros2bag.verb import VerbExtension
@@ -27,13 +28,14 @@ class CompressVerb(VerbExtension):
 
     def add_arguments(self, parser, cli_name):
         parser.add_argument(
-            'input_bag',
-            help='Path to input ROS2 bag directory'
+            'input_bags',
+            nargs='+',
+            help='Path(s) to input ROS2 bag directory/directories (supports glob patterns)'
         )
         parser.add_argument(
             '-o', '--output', 
             default=None,
-            help='Output bag name (default: input_bag_compressed)'
+            help='Output bag name (only for single input bag, default: input_bag_compressed)'
         )
         parser.add_argument(
             '-m', '--compression-mode',
@@ -77,38 +79,96 @@ class CompressVerb(VerbExtension):
         )
 
     def main(self, *, args):
-        input_bag = args.input_bag.rstrip('/')
-        output_bag = args.output if args.output else f"{input_bag}_compressed"
-        
-        # Validate input
-        if not os.path.exists(input_bag):
-            print_error(f"Input bag '{input_bag}' not found")
-            return 1
+        # Expand glob patterns and validate inputs
+        input_bags = []
+        for pattern in args.input_bags:
+            # Strip trailing slashes for proper naming
+            pattern = pattern.rstrip('/')
             
-        if not os.path.isdir(input_bag):
-            print_error(f"Input bag '{input_bag}' is not a directory")
+            # Expand glob pattern
+            matches = glob.glob(pattern)
+            if matches:
+                # Filter to only valid bag directories
+                for match in matches:
+                    if self._is_valid_bag(match):
+                        input_bags.append(match)
+                    else:
+                        print(f"Warning: Skipping '{match}' - not a valid ROS2 bag")
+            else:
+                # No glob matches, check if it's a direct path
+                if self._is_valid_bag(pattern):
+                    input_bags.append(pattern)
+                elif os.path.exists(pattern):
+                    print_error(f"'{pattern}' exists but is not a valid ROS2 bag")
+                else:
+                    print_error(f"Input bag '{pattern}' not found")
+
+        if not input_bags:
+            print_error("No valid bag files found")
             return 1
 
-        # Get original bag info if validation is requested
-        original_info = None
-        original_messages = None
-        if args.validate:
-            try:
-                result = subprocess.run(
-                    ['ros2', 'bag', 'info', input_bag],
-                    capture_output=True,
-                    text=True,
-                    check=True
-                )
-                original_info = result.stdout
-                # Extract message count
-                for line in original_info.split('\n'):
-                    if 'Messages:' in line:
-                        original_messages = int(line.split(':')[1].strip())
-                        break
-            except (subprocess.CalledProcessError, ValueError):
-                print("Warning: Could not get original message count")
+        # Check output argument constraints
+        if args.output and len(input_bags) > 1:
+            print_error("Cannot specify output name (-o) when compressing multiple bags")
+            return 1
 
+        print(f"Found {len(input_bags)} valid bag(s) to compress")
+        
+        success_count = 0
+        total_count = len(input_bags)
+        
+        for input_bag in input_bags:
+            output_bag = args.output if args.output else f"{input_bag}_compressed"
+            
+            # Get original bag info if validation is requested
+            original_info = None
+            original_messages = None
+            if args.validate:
+                try:
+                    result = subprocess.run(
+                        ['ros2', 'bag', 'info', input_bag],
+                        capture_output=True,
+                        text=True,
+                        check=True
+                    )
+                    original_info = result.stdout
+                    # Extract message count
+                    for line in original_info.split('\n'):
+                        if 'Messages:' in line:
+                            original_messages = int(line.split(':')[1].strip())
+                            break
+                except (subprocess.CalledProcessError, ValueError):
+                    print(f"Warning: Could not get original message count for {input_bag}")
+
+            # Compress the bag
+            if self._compress_single_bag(input_bag, output_bag, args, original_info, original_messages):
+                success_count += 1
+            else:
+                print_error(f"Failed to compress: {input_bag}")
+
+        # Summary
+        if total_count > 1:
+            print(f"\nCompression summary: {success_count}/{total_count} bags compressed successfully")
+        
+        return 0 if success_count == total_count else 1
+
+    def _is_valid_bag(self, bag_path):
+        """Check if a directory is a valid ROS2 bag."""
+        if not os.path.isdir(bag_path):
+            return False
+            
+        # Check for metadata.yaml
+        metadata_path = os.path.join(bag_path, 'metadata.yaml')
+        if not os.path.exists(metadata_path):
+            return False
+            
+        # Check for at least one data file (mcap or db3)
+        data_files = glob.glob(os.path.join(bag_path, '*.mcap')) + \
+                    glob.glob(os.path.join(bag_path, '*.db3'))
+        return len(data_files) > 0
+
+    def _compress_single_bag(self, input_bag, output_bag, args, original_info=None, original_messages=None):
+        """Compress a single bag file."""
         # Create temporary YAML configuration
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as temp_file:
             config = {
@@ -130,7 +190,7 @@ class CompressVerb(VerbExtension):
 
         # Print YAML configuration if verbose mode is enabled
         if args.verbose:
-            print("\nYAML Configuration:")
+            print(f"\nYAML Configuration for {input_bag}:")
             print("=" * 50)
             print(yaml.dump(config, default_flow_style=False))
             print("=" * 50)
@@ -149,14 +209,14 @@ class CompressVerb(VerbExtension):
             )
             
             if result.returncode != 0:
-                print_error("Compression failed!")
+                print_error(f"Compression failed for {input_bag}!")
                 print_error(result.stderr)
-                return 1
+                return False
 
             # Validate output exists
             if not (os.path.exists(output_bag) and (os.path.isdir(output_bag) or os.path.isfile(output_bag))):
-                print_error("Output bag not found after compression")
-                return 1
+                print_error(f"Output bag not found after compression: {output_bag}")
+                return False
 
             # Check if the output bag has valid metadata
             metadata_path = os.path.join(output_bag, 'metadata.yaml')
@@ -165,12 +225,12 @@ class CompressVerb(VerbExtension):
                     with open(metadata_path, 'r') as f:
                         content = f.read().strip()
                         if not content:
-                            print_error("Output bag has empty metadata.yaml - compression may have failed")
+                            print_error(f"Output bag has empty metadata.yaml - compression may have failed: {output_bag}")
                             print("💡 Try using file compression mode (-m file) or adjusting queue size")
-                            return 1
+                            return False
                 except Exception as e:
-                    print_error(f"Could not read metadata.yaml: {e}")
-                    return 1
+                    print_error(f"Could not read metadata.yaml for {output_bag}: {e}")
+                    return False
 
             # Validate message count if requested
             if args.validate and original_messages is not None:
@@ -183,10 +243,10 @@ class CompressVerb(VerbExtension):
                     )
                     
                     if result.returncode != 0:
-                        print_error("Output bag appears to be corrupted - cannot read bag info")
+                        print_error(f"Output bag appears to be corrupted - cannot read bag info: {output_bag}")
                         print_error(result.stderr)
                         print("💡 Try using file compression mode (-m file) or adjusting queue size")
-                        return 1
+                        return False
                         
                     compressed_info = result.stdout
                     compressed_messages = None
@@ -218,14 +278,16 @@ class CompressVerb(VerbExtension):
                             print_error(f"Message count mismatch! Original: {original_messages}, "
                                       f"Compressed: {compressed_messages}")
                             print("💡 Try increasing compression_queue_size or using file compression mode")
-                            return 1
+                            return False
                     else:
-                        print("✅ Compression completed (could not validate message count)")
+                        print(f"✅ Compression completed (could not validate message count)")
                         
                 except subprocess.CalledProcessError:
-                    print("✅ Compression completed (could not validate message count)")
+                    print(f"✅ Compression completed (could not validate message count)")
             else:
-                print("✅ Compression completed")
+                print(f"✅ Compression completed")
+
+            return True
 
         finally:
             # Clean up temporary file
@@ -233,8 +295,6 @@ class CompressVerb(VerbExtension):
                 os.unlink(temp_yaml_path)
             except OSError:
                 pass
-
-        return 0
 
     def _extract_bag_size(self, bag_info):
         """Extract bag size in bytes from ros2 bag info output."""
