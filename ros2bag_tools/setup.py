@@ -39,6 +39,7 @@ The package provides the additional commands for the ROS 2 bag command line tool
             'echo = ros2bag_tools.verb.echo:EchoVerb',
             'export = ros2bag_tools.verb.export:ExportVerb',
             'extract = ros2bag_tools.verb.extract:ExtractVerb',
+            'overlap = ros2bag_tools.verb.overlap:OverlapVerb',
             'plot = ros2bag_tools.verb.plot:PlotVerb',
             'print_stamp_stats = ros2bag_tools.verb.print_stamp_stats:PrintStampStatsVerb',
             'prune = ros2bag_tools.verb.prune:PruneVerb',
