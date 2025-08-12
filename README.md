@@ -17,6 +17,7 @@ ros2bag_tools adds verb extensions to the ros2bag cli.
 | **drop** | drop X out of every Y messages of a topic |
 | export  | export data to other formats, see [export](#export) |
 | **extract** | extract topics by name |
+| frame_id | replace frame_id or child_frame_id |
 | plot    | plot message data to a new window, see [plot](#plot) |
 | process | chain multiple filters, see [chaining](#chaining) |
 | **prune** | remove topics without messages |
@@ -24,6 +25,7 @@ ros2bag_tools adds verb extensions to the ros2bag cli.
 | **rename**  | change name of a topic |
 | **replace** | replace messages of a specific topic with message data specified in a yaml file |
 | **restamp** | for all messages with headers, change the bag timestamp to their header stamp |
+| split | split by size/duration (default: 1GB) |
 | summary | print summary on data to stdout |
 | **sync** | output synchronized bundles of messages using the ApproximateTimeSynchronizer |
 | video | show or write video of image data |
