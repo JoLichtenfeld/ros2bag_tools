@@ -34,6 +34,7 @@ The package provides the additional commands for the ROS 2 bag command line tool
         'ros2bag.verb': [
             'add = ros2bag_tools.verb.add:AddVerb',
             'compress = ros2bag_tools.verb.compress:CompressVerb',
+            'decompress = ros2bag_tools.verb.decompress:DecompressVerb',
             'cut = ros2bag_tools.verb.cut:CutVerb',
             'drop = ros2bag_tools.verb.drop:DropVerb',
             'echo = ros2bag_tools.verb.echo:EchoVerb',
